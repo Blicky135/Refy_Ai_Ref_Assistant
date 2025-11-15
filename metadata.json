@@ -1,0 +1,5 @@
+{
+  "name": "REFY: AI Referee Assistant",
+  "description": "An offline-first mobile app for soccer referees to manage matches. It includes tools for timekeeping, score tracking, card logging, possession tracking, and a Gemini-powered AI assistant for rule clarifications.",
+  "requestFramePermissions": []
+}
