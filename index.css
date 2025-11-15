@@ -29,6 +29,14 @@
   border: 1px solid var(--border-color) !important;
 }
 
+/* Prevent layout shift: give light-mode boxes the same border width (transparent) */
+.bg-white,
+.bg-gray-50,
+.bg-gray-100,
+.bg-gray-200 {
+  border: 1px solid transparent;
+}
+
 /* Make subtle light surfaces (like bg-gray-50) use content background when more suitable */
 .dark .bg-gray-50 {
   background-color: var(--content-bg) !important;
@@ -55,6 +63,14 @@
   color: var(--text-color) !important;
 }
 
+/* Ensure error messages remain red in both light and dark modes */
+.error-text {
+  color: #ef4444 !important; /* Tailwind red-500 */
+}
+.dark .error-text {
+  color: #ef4444 !important;
+}
+
 /* Also ensure muted small-text utilities become readable */
 .dark .text-sm,
 .dark .text-xs,
@@ -62,8 +78,7 @@
   color: var(--text-color) !important;
 }
 
-/* Make specific buttons white in dark mode */
-.dark .reset-btn,
+/* Make specific buttons white in dark mode (exclude reset which should match start button) */
 .dark .remove-goal-btn {
   background-color: #ffffff !important;
   color: #000000 !important;
@@ -141,6 +156,25 @@
 .dark .vibration-toggle.bg-gray-200 .vibration-toggle-thumb,
 .dark .vibration-toggle:not(.bg-yellow-400) .vibration-toggle-thumb {
   box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset !important;
+}
+
+/* Standardize timer button size */
+.timer-btn {
+  width: 3rem !important;
+  height: 3rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important; /* ensure fixed size */
+  border-radius: 9999px !important;
+}
+.timer-btn img {
+  height: 1.25rem !important;
+  width: auto !important;
+}
+.timer-btn svg, .timer-btn .w-6 {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
 }
 
 html, body, #root{
