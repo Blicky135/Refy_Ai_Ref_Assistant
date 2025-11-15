@@ -308,11 +308,11 @@ const GameTab: React.FC<{
         <p className="text-5xl sm:text-6xl font-mono font-bold text-gray-800 my-2">{timer.formattedTime}</p>
         <div className="flex justify-center items-center space-x-4">
           {timer.isActive ? (
-             <button onClick={timer.pause} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition"><Icon name="pause" className="w-6 h-6" /></button>
+             <button onClick={timer.pause} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition timer-btn" aria-label="Pause"><span className="text-sm font-semibold">Pause</span></button>
           ) : (
-            <button onClick={onPlay} disabled={!canPlay} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition disabled:bg-gray-300"><Icon name="play" className="w-6 h-6" /></button>
+            <button onClick={onPlay} disabled={!canPlay} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition disabled:bg-gray-300 timer-btn" aria-label="Start"><span className="text-sm font-semibold">Start</span></button>
           )}
-          <button onClick={() => timer.reset(DEFAULT_SETTINGS.halfDuration)} className="p-3 bg-gray-200 text-gray-800 rounded-full hover:bg-gray-300 transition reset-btn"><img src="/reset-icon.jpg" alt="Reset" className="h-6 w-auto" /></button>
+          <button onClick={() => timer.reset(DEFAULT_SETTINGS.halfDuration)} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition reset-btn timer-btn" aria-label="Reset"><span className="text-sm font-semibold">Reset</span></button>
         </div>
         <div className="mt-4">
             {canFinishHalf && (
@@ -552,8 +552,13 @@ const SettingsModal: React.FC<{
       const m = parseInt(mins) || 0;
       const s = parseInt(secs) || 0;
       const total = (m * 60) + s;
+      const MAX_SECONDS = 100 * 60; // 100 minutes
       if (total <= 0) {
         setError('Invalid time entered');
+        return;
+      }
+      if (total > MAX_SECONDS) {
+        setError('Maximum halftime is 100 minutes');
         return;
       }
       onConfirm(total);
@@ -562,10 +567,10 @@ const SettingsModal: React.FC<{
     return (
       <div className="space-y-4">
         <div className="flex items-center space-x-2">
-          <input type="number" min={0} value={mins} onChange={(e) => setMins(e.target.value)} className="w-1/2 p-2 border rounded-md" placeholder="Mins" />
-          <input type="number" min={0} value={secs} onChange={(e) => setSecs(e.target.value)} className="w-1/2 p-2 border rounded-md" placeholder="Secs" />
+          <input type="number" min={0} max={100} value={mins} onChange={(e) => setMins(e.target.value)} className="w-1/2 p-2 border rounded-md" placeholder="Mins" />
+          <input type="number" min={0} max={59} value={secs} onChange={(e) => setSecs(e.target.value)} className="w-1/2 p-2 border rounded-md" placeholder="Secs" />
         </div>
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-red-500 error-text">{error}</p>}
         <div className="flex justify-end space-x-2">
           <button onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
           <button onClick={handleConfirm} className="px-4 py-2 bg-yellow-400 text-gray-800 rounded-md">Confirm</button>
@@ -579,9 +584,18 @@ const SettingsModal: React.FC<{
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700">Half Duration</label>
-            <div className="mt-1 flex items-center space-x-2">
-            <div className="text-sm text-gray-700">{Math.floor(settings.halfDuration / 60)}m {settings.halfDuration % 60}s</div>
-            <button type="button" onClick={() => setShowDurationPrompt(true)} className="ml-auto inline-flex items-center px-3 py-1.5 rounded-md" style={{ backgroundColor: 'var(--panel-bg)', color: 'var(--text-color)' }}>Edit</button>
+            <div className="mt-1 flex items-center" style={{ gap: '0.75rem' }}>
+            <div className="text-lg font-semibold text-gray-700">{Math.floor(settings.halfDuration / 60)}m {settings.halfDuration % 60}s</div>
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                type="button"
+                onClick={() => setShowDurationPrompt(true)}
+                className={`inline-flex items-center px-3 py-1.5 rounded-md border bg-yellow-400 hover:bg-yellow-500 transition ${settings.theme === 'dark' ? 'text-white border-yellow-500' : 'text-gray-900 border-yellow-600'}`}
+                style={{ transform: 'translateX(6px)' }}
+              >
+                Edit
+              </button>
+            </div>
           </div>
         </div>
         <div className="flex items-center justify-between">
