@@ -3,6 +3,8 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useTimer } from './hooks/useTimer';
 import { askAIReferee } from './services/geminiService';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { DEFAULT_SETTINGS, RULES_CONTENT } from './constants';
 import { MatchData, Tab, Team, EventType, EventLog, MatchStatus, Settings, Rule } from './types';
 import { Icon } from './components/Icon';
@@ -29,6 +31,75 @@ const formatMinute = (timeInSeconds: number) => {
   const totalSeconds = Math.round(timeInSeconds || 0);
   const minutes = Math.floor(totalSeconds / 60);
   return `${minutes}'`;
+};
+
+// Normalize AI responses for cleaner display:
+// - Remove lines like "Ask AI Assistant" or "Ask REFY"
+// - Remove checkbox markers
+// - Convert unordered list markers (*, -, +) into a numbered list
+// - Collapse multiple blank lines
+const normalizeAIResponse = (text: string) => {
+  if (!text) return '';
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  let inList = false;
+
+  for (let raw of lines) {
+    const line = raw.replace(/\s+$/g, '');
+    const trimmed = line.trim();
+    
+    // Preserve blank lines for paragraph breaks
+    if (!trimmed) {
+      out.push('');
+      inList = false;
+      continue;
+    }
+
+    // drop UI headings that sometimes appear in the response
+    if (/^ask\s+(ai assistant|refy)\b/i.test(trimmed)) continue;
+
+    // remove checkbox markers like "- [x]" or "* [ ]"
+    let cleaned = line.replace(/\[\s*[xX ]?\s*\]\s*/g, '');
+
+    // Detect list items and convert to markdown format
+    const markerMatch = cleaned.match(/^\s*(?:[•*+\-]|\d+[\.\)])\s+(.*)$/);
+    if (markerMatch) {
+      // It's a list item: convert to markdown bullet with leading blank line if starting a list
+      if (!inList) {
+        out.push('');
+        inList = true;
+      }
+      cleaned = '- ' + markerMatch[1].trim();
+    } else {
+      // Not a list item: regular paragraph
+      if (inList) {
+        out.push('');
+        inList = false;
+      }
+      cleaned = cleaned.trimStart();
+    }
+
+    out.push(cleaned);
+  }
+
+  // collapse multiple consecutive blank lines into a single blank line
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
+// Custom markdown renderers for better list spacing and formatting
+const markdownComponents = {
+  ul: ({ children }: any) => (
+    <ul className="list-disc list-inside space-y-2 my-2 ml-2">{children}</ul>
+  ),
+  ol: ({ children }: any) => (
+    <ol className="list-decimal list-inside space-y-2 my-2 ml-2">{children}</ol>
+  ),
+  li: ({ children }: any) => (
+    <li className="ml-2">{children}</li>
+  ),
+  p: ({ children }: any) => (
+    <p className="my-3 leading-relaxed">{children}</p>
+  ),
 };
 
 const App: React.FC = () => {
@@ -487,9 +558,9 @@ const RulesTab: React.FC = () => {
     const handleAsk = async () => {
         if (!question.trim()) return;
         setIsLoading(true);
-        setAnswer('');
-        const response = await askAIReferee(question);
-        setAnswer(response);
+      setAnswer('');
+      const response = await askAIReferee(question);
+      setAnswer(normalizeAIResponse(response));
         setIsLoading(false);
     };
 
@@ -505,7 +576,13 @@ const RulesTab: React.FC = () => {
                     <button onClick={handleAsk} disabled={isLoading} className="w-full bg-yellow-400 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition disabled:bg-gray-300">
                         {isLoading ? 'Thinking...' : 'Ask REFY'}
                     </button>
-                    {answer && <div className="mt-2 p-2 bg-yellow-100 rounded-md text-sm text-black whitespace-pre-wrap">{answer}</div>}
+                    {answer && (
+                      <div className="mt-2 p-3 bg-yellow-100 rounded-md text-sm text-black">
+                        <div className="prose prose-sm dark:prose-invert">
+                          <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+                        </div>
+                      </div>
+                    )}
                 </div>
             </div>
             <div className="bg-white rounded-lg shadow overflow-hidden">
