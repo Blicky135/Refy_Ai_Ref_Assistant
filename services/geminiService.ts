@@ -76,16 +76,6 @@ export const askAIReferee = async (question: string): Promise<string> => {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [
-<<<<<<< HEAD
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: question }
-        ],
-        config: { temperature: 0.15, maxOutputTokens: 800 }
-      } as any);
-
-      // Attempt to extract text from known response shapes
-      const text = (response && (response.text || response.outputText || response.output?.[0]?.content || (Array.isArray(response.outputs) && response.outputs[0]?.content?.[0]?.text))) || '';
-=======
           { role: 'user', parts: [{ text: `${systemInstruction}\n\nUser question: ${question}` }] }
         ],
         generationConfig: { temperature: 0.15, maxOutputTokens: 800 }
@@ -93,7 +83,6 @@ export const askAIReferee = async (question: string): Promise<string> => {
 
       // Attempt to extract text from known response shapes
       const text = (response?.candidates?.[0]?.content?.parts?.[0]?.text) || '';
->>>>>>> master
 
       if (typeof text === 'string' && text.trim().length > 10) {
         // If AI produced a short/low-quality reply, append concise local matches to improve usefulness
