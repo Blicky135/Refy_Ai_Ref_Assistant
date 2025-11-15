@@ -41,6 +41,7 @@ const App: React.FC = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isExtraTimeModalOpen, setIsExtraTimeModalOpen] = useState(false);
   const [extraTimeInput, setExtraTimeInput] = useState({ minutes: '', seconds: '' });
+  const [extraTimeError, setExtraTimeError] = useState('');
   const [cardModalInfo, setCardModalInfo] = useState<{ team: Team; card: 'yellow' | 'red' } | null>(null);
   const [stoppageTimeAdded, setStoppageTimeAdded] = useState(0);
 
@@ -171,22 +172,63 @@ const App: React.FC = () => {
   };
 
   const handleAddExtraTime = () => {
+    // Check if inputs are valid integers
+    if (extraTimeInput.minutes && !Number.isInteger(Number(extraTimeInput.minutes))) {
+      setExtraTimeError('Invalid input. Minutes and seconds must be whole numbers.');
+      return;
+    }
+    if (extraTimeInput.seconds && !Number.isInteger(Number(extraTimeInput.seconds))) {
+      setExtraTimeError('Invalid input. Minutes and seconds must be whole numbers.');
+      return;
+    }
+
     const mins = parseInt(extraTimeInput.minutes) || 0;
     const secs = parseInt(extraTimeInput.seconds) || 0;
     const totalSeconds = (mins * 60) + secs;
-    if (totalSeconds > 0) {
-      timer.addTime(totalSeconds);
-      setStoppageTimeAdded(prev => prev + totalSeconds);
-      const eventTime = matchData.currentHalf * settings.halfDuration;
-      addEvent(EventType.EXTRA_TIME, eventTime, undefined, `${mins}m ${secs}s added`);
-      setMatchData(prev => ({...prev, status: 'extra-time'}));
+    const MAX_SECONDS = 100 * 60; // 100 minutes
+    const MAX_SECS = 59;
+    
+    if (totalSeconds <= 0) {
+      setExtraTimeError('Invalid time entered');
+      return;
     }
+    if (secs > MAX_SECS) {
+      setExtraTimeError('Invalid input. Maximum seconds is 59.');
+      return;
+    }
+    if (totalSeconds > MAX_SECONDS) {
+      setExtraTimeError('Invalid input. Maximum extra time is 100 minutes.');
+      return;
+    }
+    
+    addExtraTimeAndClose(totalSeconds, mins, secs);
+  };
+
+  const addExtraTimeAndClose = (totalSeconds: number, mins: number, secs: number) => {
+    timer.addTime(totalSeconds);
+    setStoppageTimeAdded(prev => prev + totalSeconds);
+    const eventTime = matchData.currentHalf * settings.halfDuration;
+    addEvent(EventType.EXTRA_TIME, eventTime, undefined, `${mins}m ${secs}s added`);
+    setMatchData(prev => ({...prev, status: 'extra-time'}));
     setIsExtraTimeModalOpen(false);
     setExtraTimeInput({ minutes: '', seconds: '' });
+    setExtraTimeError('');
+  };
+
+  const addQuickExtraTime = (totalSeconds: number, mins: number, secs: number) => {
+    timer.addTime(totalSeconds);
+    setStoppageTimeAdded(prev => prev + totalSeconds);
+    const eventTime = matchData.currentHalf * settings.halfDuration;
+    addEvent(EventType.EXTRA_TIME, eventTime, undefined, `${mins}m ${secs}s added`);
+    setIsExtraTimeModalOpen(false);
+    setExtraTimeInput({ minutes: '', seconds: '' });
+    setExtraTimeError('');
   };
   
   const handleDeclineExtraTime = () => {
     setIsExtraTimeModalOpen(false);
+    setExtraTimeInput({ minutes: '', seconds: '' });
+    setExtraTimeError('');
     endCurrentHalf();
   };
   
@@ -211,7 +253,7 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-4 pb-28" style={{ backgroundColor: 'var(--content-bg)' }}>
-          {activeTab === 'game' && <GameTab matchData={matchData} timer={timer} onScore={handleScore} onRemoveGoal={handleRemoveGoal} onCard={(team, card) => setCardModalInfo({team, card})} onPlay={handlePlay} onFinishHalf={endCurrentHalf} onStartNextHalf={handleStartNextHalf} onSelectKickoff={handleKickoffSelect} onGoToCoinFlip={() => setActiveTab('coin-flip')} />}
+          {activeTab === 'game' && <GameTab matchData={matchData} timer={timer} settings={settings} onScore={handleScore} onRemoveGoal={handleRemoveGoal} onCard={(team, card) => setCardModalInfo({team, card})} onPlay={handlePlay} onFinishHalf={endCurrentHalf} onStartNextHalf={handleStartNextHalf} onSelectKickoff={handleKickoffSelect} onGoToCoinFlip={() => setActiveTab('coin-flip')} />}
           {activeTab === 'report' && <ReportTab matchData={matchData} />}
           {activeTab === 'coin-flip' && <CoinFlipTab />}
           {activeTab === 'rules' && <RulesTab />}
@@ -237,12 +279,36 @@ const App: React.FC = () => {
         <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={matchHistory} />
         <Modal isOpen={isExtraTimeModalOpen} onClose={() => setIsExtraTimeModalOpen(false)} title="Add Extra Time?">
             <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                    <input type="number" placeholder="Mins" value={extraTimeInput.minutes} onChange={(e) => setExtraTimeInput(p => ({...p, minutes: e.target.value}))} className="w-full p-2 border rounded-md text-center" />
-                    <span className="font-bold text-lg">:</span>
-                    <input type="number" placeholder="Secs" value={extraTimeInput.seconds} onChange={(e) => setExtraTimeInput(p => ({...p, seconds: e.target.value}))} className="w-full p-2 border rounded-md text-center" />
+                <div className="flex flex-col gap-3">
+                    <p className="text-sm font-semibold text-gray-700">Quick Options</p>
+                    <div className="grid grid-cols-3 gap-2">
+                        {settings.quickExtraTime.map((time, idx) => {
+                            const mins = Math.floor(time / 60);
+                            const secs = time % 60;
+                            return (
+                                <button
+                                    key={idx}
+                                    onClick={() => {
+                                        addQuickExtraTime(time, mins, secs);
+                                    }}
+                                    className="bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-bold py-2 px-3 rounded-lg transition text-sm"
+                                >
+                                    +{mins}m {secs}s
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
-                <button onClick={handleAddExtraTime} className="w-full bg-yellow-400 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition">Add Time</button>
+                <div className="border-t pt-3">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">Custom Time</p>
+                    <div className="flex items-center space-x-2">
+                        <input type="number" min={0} max={100} placeholder="Mins" value={extraTimeInput.minutes} onChange={(e) => { setExtraTimeInput(p => ({...p, minutes: e.target.value})); setExtraTimeError(''); }} className="w-full p-2 border rounded-md text-center" />
+                        <span className="font-bold text-lg">:</span>
+                        <input type="number" min={0} max={59} placeholder="Secs" value={extraTimeInput.seconds} onChange={(e) => { setExtraTimeInput(p => ({...p, seconds: e.target.value})); setExtraTimeError(''); }} className="w-full p-2 border rounded-md text-center" />
+                    </div>
+                </div>
+                {extraTimeError && <p className="text-sm text-red-500 error-text">{extraTimeError}</p>}
+                <button onClick={handleAddExtraTime} disabled={extraTimeInput.minutes === '' || extraTimeInput.seconds === '' || extraTimeError !== ''} className="w-full bg-yellow-400 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition disabled:bg-gray-300 disabled:cursor-not-allowed">Add Time</button>
                 <button onClick={handleDeclineExtraTime} className="w-full bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition">No</button>
             </div>
         </Modal>
@@ -281,7 +347,8 @@ const KickoffScreen: React.FC<{ onSelectKickoff: (team: Team) => void; onGoToCoi
 
 const GameTab: React.FC<{ 
     matchData: MatchData, 
-    timer: any, 
+    timer: any,
+    settings: Settings,
     onScore: (t: Team) => void, 
     onRemoveGoal: (t: Team) => void,
     onCard: (t: Team, c: 'yellow'|'red') => void, 
@@ -291,7 +358,7 @@ const GameTab: React.FC<{
     onSelectKickoff: (t: Team) => void,
     onGoToCoinFlip: () => void,
 }> = (props) => {
-  const { matchData, timer, onScore, onRemoveGoal, onCard, onPlay, onFinishHalf, onStartNextHalf, onSelectKickoff, onGoToCoinFlip } = props;
+  const { matchData, timer, settings, onScore, onRemoveGoal, onCard, onPlay, onFinishHalf, onStartNextHalf, onSelectKickoff, onGoToCoinFlip } = props;
 
   if (matchData.status === 'pre-match') {
     return <KickoffScreen onSelectKickoff={onSelectKickoff} onGoToCoinFlip={onGoToCoinFlip} />;
@@ -312,7 +379,7 @@ const GameTab: React.FC<{
           ) : (
             <button onClick={onPlay} disabled={!canPlay} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition disabled:bg-gray-300 timer-btn" aria-label="Start"><span className="text-sm font-semibold">Start</span></button>
           )}
-          <button onClick={() => timer.reset(DEFAULT_SETTINGS.halfDuration)} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition reset-btn timer-btn" aria-label="Reset"><span className="text-sm font-semibold">Reset</span></button>
+          <button onClick={() => timer.reset(settings.halfDuration)} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition reset-btn timer-btn" aria-label="Reset"><span className="text-sm font-semibold">Reset</span></button>
         </div>
         <div className="mt-4">
             {canFinishHalf && (
@@ -529,6 +596,7 @@ const SettingsModal: React.FC<{
 }> = ({ isOpen, onClose, settings, setSettings, onStartNewGame, onClearHistory }) => {
   const [showConfirm, setShowConfirm] = useState<'new' | 'history' | null>(null);
   const [showDurationPrompt, setShowDurationPrompt] = useState(false);
+  const [showQuickExtraTimePrompt, setShowQuickExtraTimePrompt] = useState(false);
 
   const handleNewGameConfirm = () => {
       onStartNewGame();
@@ -549,31 +617,137 @@ const SettingsModal: React.FC<{
     const [error, setError] = useState('');
 
     const handleConfirm = () => {
+      // Check if inputs are valid integers
+      if (mins && !Number.isInteger(Number(mins))) {
+        setError('Invalid input. Minutes and seconds must be whole numbers.');
+        return;
+      }
+      if (secs && !Number.isInteger(Number(secs))) {
+        setError('Invalid input. Minutes and seconds must be whole numbers.');
+        return;
+      }
+      
       const m = parseInt(mins) || 0;
       const s = parseInt(secs) || 0;
       const total = (m * 60) + s;
       const MAX_SECONDS = 100 * 60; // 100 minutes
+      const MAX_SECS = 59;
+      
       if (total <= 0) {
         setError('Invalid time entered');
         return;
       }
-      if (total > MAX_SECONDS) {
-        setError('Maximum halftime is 100 minutes');
+      if (s > MAX_SECS) {
+        setError('Invalid input. Maximum seconds is 59.');
         return;
       }
+      if (total > MAX_SECONDS) {
+        setError('Invalid input. Maximum halftime is 100 minutes.');
+        return;
+      }
+      
+      // All validation passed, confirm
       onConfirm(total);
     };
+
+    const canConfirm = mins !== '' && secs !== '' && !error;
 
     return (
       <div className="space-y-4">
         <div className="flex items-center space-x-2">
-          <input type="number" min={0} max={100} value={mins} onChange={(e) => setMins(e.target.value)} className="w-1/2 p-2 border rounded-md" placeholder="Mins" />
-          <input type="number" min={0} max={59} value={secs} onChange={(e) => setSecs(e.target.value)} className="w-1/2 p-2 border rounded-md" placeholder="Secs" />
+          <input type="number" min={0} max={100} value={mins} onChange={(e) => { setMins(e.target.value); setError(''); }} className="w-1/2 p-2 border rounded-md" placeholder="Mins" />
+          <input type="number" min={0} max={59} value={secs} onChange={(e) => { setSecs(e.target.value); setError(''); }} className="w-1/2 p-2 border rounded-md" placeholder="Secs" />
         </div>
         {error && <p className="text-sm text-red-500 error-text">{error}</p>}
         <div className="flex justify-end space-x-2">
           <button onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
-          <button onClick={handleConfirm} className="px-4 py-2 bg-yellow-400 text-gray-800 rounded-md">Confirm</button>
+          <button onClick={handleConfirm} disabled={!canConfirm} className="px-4 py-2 bg-yellow-400 text-gray-800 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed">Confirm</button>
+        </div>
+      </div>
+    );
+  };
+
+  // --- Quick Extra Time prompt component (local) ---
+  const QuickExtraTimePrompt: React.FC<{ initialTimes: number[]; onCancel: () => void; onConfirm: (times: number[]) => void }> = ({ initialTimes, onCancel, onConfirm }) => {
+    const initialMins = initialTimes.map(t => Math.floor(t / 60));
+    const initialSecs = initialTimes.map(t => t % 60);
+    const [mins, setMins] = useState<string[]>(initialMins.map(m => String(m)));
+    const [secs, setSecs] = useState<string[]>(initialSecs.map(s => String(s)));
+    const [error, setError] = useState('');
+
+    const handleConfirm = () => {
+      // Validate all 3 options
+      for (let i = 0; i < 3; i++) {
+        if (mins[i] && !Number.isInteger(Number(mins[i]))) {
+          setError('Invalid input. Minutes and seconds must be whole numbers.');
+          return;
+        }
+        if (secs[i] && !Number.isInteger(Number(secs[i]))) {
+          setError('Invalid input. Minutes and seconds must be whole numbers.');
+          return;
+        }
+      }
+
+      const times = mins.map((m, i) => {
+        const minute = parseInt(m) || 0;
+        const second = parseInt(secs[i]) || 0;
+        return (minute * 60) + second;
+      });
+
+      for (let time of times) {
+        if (time <= 0) {
+          setError('Invalid time entered');
+          return;
+        }
+        if (time % 60 > 59) {
+          setError('Invalid input. Maximum seconds is 59.');
+          return;
+        }
+        if (time > 100 * 60) {
+          setError('Invalid input. Maximum extra time is 100 minutes.');
+          return;
+        }
+      }
+
+      // All validation passed, confirm
+      onConfirm(times);
+    };
+
+    const canConfirm = mins.every((m, i) => m !== '' && secs[i] !== '') && !error;
+
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">Set 3 quick extra time options</p>
+        {[0, 1, 2].map((idx) => (
+          <div key={idx} className="space-y-2">
+            <label className="block text-xs font-medium text-gray-700">Option {idx + 1}</label>
+            <div className="flex items-center space-x-2">
+              <input 
+                type="number" 
+                min={0} 
+                max={100} 
+                value={mins[idx]} 
+                onChange={(e) => { setMins(prev => { const newMins = [...prev]; newMins[idx] = e.target.value; return newMins; }); setError(''); }} 
+                className="w-1/2 p-2 border rounded-md text-center" 
+                placeholder="Mins" 
+              />
+              <span className="font-bold text-lg">:</span>
+              <input 
+                type="number" 
+                min={0} 
+                max={59} 
+                value={secs[idx]} 
+                onChange={(e) => { setSecs(prev => { const newSecs = [...prev]; newSecs[idx] = e.target.value; return newSecs; }); setError(''); }} 
+                className="w-1/2 p-2 border rounded-md text-center" 
+                placeholder="Secs" 
+              />
+            </div>
+          </div>
+        ))}
+        {error && <p className="text-sm text-red-500 error-text">{error}</p>}
+        <div className="flex justify-end space-x-2">
+          <button onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded-md">Cancel</button>
+          <button onClick={handleConfirm} disabled={!canConfirm} className="px-4 py-2 bg-yellow-400 text-gray-800 rounded-md disabled:bg-gray-300 disabled:cursor-not-allowed">Confirm</button>
         </div>
       </div>
     );
@@ -616,6 +790,22 @@ const SettingsModal: React.FC<{
             <span className={`theme-toggle-thumb inline-block w-4 h-4 transform rounded-full transition-transform ${settings.theme === 'dark' ? 'translate-x-6' : 'translate-x-1'}`} />
           </button>
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Quick Extra Time</label>
+            <div className="mt-1 flex items-center" style={{ gap: '0.75rem' }}>
+            <div className="text-lg font-semibold text-gray-700">{Math.floor(settings.quickExtraTime[0] / 60)}m, {Math.floor(settings.quickExtraTime[1] / 60)}m, {Math.floor(settings.quickExtraTime[2] / 60)}m</div>
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                type="button"
+                onClick={() => setShowQuickExtraTimePrompt(true)}
+                className={`inline-flex items-center px-3 py-1.5 rounded-md border bg-yellow-400 hover:bg-yellow-500 transition ${settings.theme === 'dark' ? 'text-white border-yellow-500' : 'text-gray-900 border-yellow-600'}`}
+                style={{ transform: 'translateX(6px)' }}
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="border-t pt-4 space-y-2">
             <button onClick={() => setShowConfirm('new')} className="w-full text-left p-2 rounded hover:bg-gray-100 text-blue-600 font-semibold">Start New Game</button>
             <button onClick={() => setShowConfirm('history')} className="w-full text-left p-2 rounded hover:bg-gray-100 text-red-600 font-semibold">Clear Match History</button>
@@ -627,6 +817,15 @@ const SettingsModal: React.FC<{
             initialSeconds={settings.halfDuration}
             onCancel={() => setShowDurationPrompt(false)}
             onConfirm={(seconds) => { setSettings(s => ({...s, halfDuration: seconds})); setShowDurationPrompt(false); }}
+          />
+      </Modal>
+
+      {/* Quick Extra Time Prompt Modal */}
+      <Modal isOpen={showQuickExtraTimePrompt} onClose={() => setShowQuickExtraTimePrompt(false)} title="Set Quick Extra Time">
+          <QuickExtraTimePrompt
+            initialTimes={settings.quickExtraTime}
+            onCancel={() => setShowQuickExtraTimePrompt(false)}
+            onConfirm={(times) => { setSettings(s => ({...s, quickExtraTime: times})); setShowQuickExtraTimePrompt(false); }}
           />
       </Modal>
 

@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS: Settings = {
   halfDuration: 45 * 60, // 45 minutes in seconds
   vibration: true,
   theme: 'light',
+  quickExtraTime: [2 * 60, 3 * 60, 4 * 60], // 2, 3, 4 minutes in seconds
 };
 
 export const RULES_CONTENT: Rule[] = [

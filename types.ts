@@ -47,6 +47,7 @@ export interface Settings {
   halfDuration: number; // in seconds
   vibration: boolean;
   theme?: 'light' | 'dark';
+  quickExtraTime: number[]; // array of 3 quick extra time options in seconds
 }
 
 export interface Rule {
