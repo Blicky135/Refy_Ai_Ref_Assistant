@@ -1,0 +1,182 @@
+/* Theme variables */
+:root{
+  --app-bg: #edf2f7; /* bg-gray-200 */
+  --panel-bg: #ffffff; /* white */
+  --content-bg: #f7fafc; /* bg-gray-100 */
+  --nav-bg: rgba(255,255,255,0.85);
+  --text-color: #1f2937; /* gray-800 */
+  --border-color: #e5e7eb; /* gray-200 */
+}
+
+:root.dark{
+  /* Page background is pure black for maximum contrast; panels remain softer */
+  --app-bg: #000000; /* pure black page background */
+  --panel-bg: #000000; /* panels black (not navy) */
+  --content-bg: #000000; /* content areas black */
+  --nav-bg: rgba(255,255,255,0.02);
+  --text-color: #f8fafc;
+  --border-color: rgba(255,255,255,0.06);
+}
+
+/* Override common Tailwind white/gray backgrounds in dark mode so boxes become dark panels */
+.dark .bg-white,
+.dark .bg-gray-50,
+.dark .bg-gray-100,
+.dark .bg-gray-200 {
+  background-color: var(--panel-bg) !important;
+  color: var(--text-color) !important;
+  border-color: var(--border-color) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+/* Make subtle light surfaces (like bg-gray-50) use content background when more suitable */
+.dark .bg-gray-50 {
+  background-color: var(--content-bg) !important;
+}
+
+/* Ensure small light panels (bg-yellow-100 used for highlights) remain readable but not too bright */
+.dark .bg-yellow-100 {
+  background-color: rgba(250,204,21,0.08) !important;
+  color: #000000 !important;
+}
+
+/* Force Tailwind gray text utilities to use the theme text color in dark mode */
+.dark .text-gray-50,
+.dark .text-gray-100,
+.dark .text-gray-200,
+.dark .text-gray-300,
+.dark .text-gray-400,
+.dark .text-gray-500,
+.dark .text-gray-600,
+.dark .text-gray-700,
+.dark .text-gray-800,
+.dark .text-gray-900,
+.dark .text-gray-950 {
+  color: var(--text-color) !important;
+}
+
+/* Also ensure muted small-text utilities become readable */
+.dark .text-sm,
+.dark .text-xs,
+.dark .text-base {
+  color: var(--text-color) !important;
+}
+
+/* Make specific buttons white in dark mode */
+.dark .reset-btn,
+.dark .remove-goal-btn {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Ensure icons inside those buttons inherit the correct color */
+.dark .reset-btn img,
+.dark .remove-goal-btn svg,
+.dark .remove-goal-btn img {
+  filter: none !important;
+  color: #000000 !important;
+}
+
+/* Make the reset button blend cleanly: remove border and hide overflow so image looks circular */
+.dark .reset-btn {
+  border: none !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  padding: 0.5rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.dark .reset-btn img {
+  background: transparent !important;
+  display: block !important;
+  border-radius: 9999px !important;
+  object-fit: contain !important;
+}
+
+/* Dark mode: settings theme toggle styling */
+.dark .theme-toggle {
+  background-color: #fbbf24 !important; /* yellow-400 */
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.dark .theme-toggle-thumb {
+  background-color: #000000 !important; /* thumb black */
+  width: 1rem !important;
+  height: 1rem !important;
+}
+.theme-toggle-thumb {
+  background-color: #ffffff;
+}
+
+/* Dark mode: vibration toggle OFF appearance (visible, not pure black) */
+.dark .vibration-toggle.bg-gray-200 {
+  background-color: rgba(255,255,255,0.04) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.vibration-toggle-thumb {
+  background-color: #ffffff !important; /* white thumb in light mode */
+  width: 1rem !important;
+  height: 1rem !important;
+}
+
+/* When vibration is ON (yellow track), thumb should be white in light mode, black in dark mode */
+.vibration-toggle.bg-yellow-400 .vibration-toggle-thumb {
+  background-color: #ffffff !important;
+}
+.dark .vibration-toggle.bg-yellow-400 .vibration-toggle-thumb {
+  background-color: #000000 !important;
+}
+
+.dark .vibration-toggle-thumb {
+  background-color: #d1d5db !important; /* gray-300 in dark mode for OFF */
+  width: 1rem !important;
+  height: 1rem !important;
+}
+.dark .vibration-toggle.bg-gray-200 {
+  background-color: rgba(255,255,255,0.04) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.dark .vibration-toggle.bg-gray-200 .vibration-toggle-thumb,
+.dark .vibration-toggle:not(.bg-yellow-400) .vibration-toggle-thumb {
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset !important;
+}
+
+html, body, #root{
+  height: 100%;
+}
+
+body{
+  margin: 0;
+  background-color: var(--app-bg);
+  color: var(--text-color);
+  transition: background-color 180ms linear, color 180ms linear;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+/* make sure default tailwind backgrounds don't clash too much by adding smooth transitions */
+*{ transition: background-color 160ms linear, color 160ms linear, border-color 160ms linear; }
+
+/* Inputs should stay with a light background and black text for readability (including dark mode) */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="search"],
+textarea,
+select {
+  background-color: #ffffff;
+  color: #000000;
+  border-color: var(--border-color);
+}
+
+input::placeholder, textarea::placeholder {
+  color: #6b7280; /* gray-500 */
+  opacity: 1;
+}
+
+/* Keep focus outlines accessible */
+input:focus, textarea:focus, select:focus {
+  outline: 2px solid rgba(250, 204, 21, 0.25);
+  outline-offset: 2px;
+}
