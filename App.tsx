@@ -89,13 +89,13 @@ const normalizeAIResponse = (text: string) => {
 // Custom markdown renderers for better list spacing and formatting
 const markdownComponents = {
   ul: ({ children }: any) => (
-    <ul className="list-disc list-inside space-y-2 my-2 ml-2">{children}</ul>
+    <ul className="list-disc space-y-2 my-2 pl-6">{children}</ul>
   ),
   ol: ({ children }: any) => (
-    <ol className="list-decimal list-inside space-y-2 my-2 ml-2">{children}</ol>
+    <ol className="list-decimal space-y-2 my-2 pl-6">{children}</ol>
   ),
   li: ({ children }: any) => (
-    <li className="ml-2">{children}</li>
+    <li className="ml-0">{children}</li>
   ),
   p: ({ children }: any) => (
     <p className="my-3 leading-relaxed">{children}</p>
