@@ -3,7 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import { RULES_CONTENT } from "../constants";
 
 // Guarded AI client: only construct if API key present to avoid runtime errors in dev/test.
-const apiKey = process.env.API_KEY || (typeof window !== 'undefined' ? (window as any).__API_KEY : undefined);
+const apiKey = import.meta.env.VITE_API_KEY;
 let ai: GoogleGenAI | null = null;
 if (apiKey) {
   try {
@@ -76,6 +76,7 @@ export const askAIReferee = async (question: string): Promise<string> => {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [
+<<<<<<< HEAD
           { role: 'system', content: systemInstruction },
           { role: 'user', content: question }
         ],
@@ -84,6 +85,15 @@ export const askAIReferee = async (question: string): Promise<string> => {
 
       // Attempt to extract text from known response shapes
       const text = (response && (response.text || response.outputText || response.output?.[0]?.content || (Array.isArray(response.outputs) && response.outputs[0]?.content?.[0]?.text))) || '';
+=======
+          { role: 'user', parts: [{ text: `${systemInstruction}\n\nUser question: ${question}` }] }
+        ],
+        generationConfig: { temperature: 0.15, maxOutputTokens: 800 }
+      } as any);
+
+      // Attempt to extract text from known response shapes
+      const text = (response?.candidates?.[0]?.content?.parts?.[0]?.text) || '';
+>>>>>>> master
 
       if (typeof text === 'string' && text.trim().length > 10) {
         // If AI produced a short/low-quality reply, append concise local matches to improve usefulness
