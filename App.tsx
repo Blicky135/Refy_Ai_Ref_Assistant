@@ -103,9 +103,15 @@ const markdownComponents = {
 };
 
 const App: React.FC = () => {
+  // Initialize with merged defaults to handle old localStorage data missing new properties
+  const initSettings = () => {
+    const stored = JSON.parse(localStorage.getItem('appSettings') || 'null');
+    return stored ? { ...DEFAULT_SETTINGS, ...stored } : DEFAULT_SETTINGS;
+  };
+  
   const [matchData, setMatchData] = useLocalStorage<MatchData>('currentMatch', initialMatchData);
   const [matchHistory, setMatchHistory] = useLocalStorage<MatchData[]>('matchHistory', []);
-  const [settings, setSettings] = useLocalStorage<Settings>('appSettings', DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<Settings>(initSettings());
   const [activeTab, setActiveTab] = useState<Tab>('game');
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
