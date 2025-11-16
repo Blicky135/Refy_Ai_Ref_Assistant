@@ -6,41 +6,36 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      server: {
-        port: 3000,
-        host: '0.0.0.0',
-      },
+      // ... your other settings
       plugins: [
         react(),
         VitePWA({ 
           registerType: 'autoUpdate',
-          // v-- THIS IS THE NEW PART --v
           includeAssets: ['first trans.png', 'second trans.png', 'favicon.ico'],
-          // ^-- THIS TELLS THE PWA TO SAVE THESE IMAGES FOR OFFLINE USE --^
           manifest: {
             name: 'Refy AI Referee Assistant',
             short_name: 'Refy',
             description: 'An AI-powered referee assistant for soccer matches.',
             theme_color: '#ffffff',
             icons: [
+              // --- Your original icon for older browsers ---
               {
-                src: 'app_icon.png',
+                src: 'app_icon.png', // Your icon with the white background
                 sizes: '192x192',
-                type: 'image/png'
+                type: 'image/png',
+                purpose: 'any' // The default purpose
               },
+              // --- THE NEW MASKABLE ICON ---
               {
-                src: 'app_icon.png',
+                src: 'maskable_icon.png', // The new icon you just created
                 sizes: '512x512',
-                type: 'image/png'
+                type: 'image/png',
+                purpose: 'maskable' // The magic property!
               }
             ]
           }
         })
       ],
-      resolve: {
-        alias: {
-          '@': path.resolve(__dirname, '.'),
-        }
-      }
+      // ... your other settings
     };
 });
