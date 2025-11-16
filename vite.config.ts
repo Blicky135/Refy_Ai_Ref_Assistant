@@ -1,7 +1,7 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import { VitePWA } from 'vite-plugin-pwa'; // <-- 1. Add this import
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -12,9 +12,11 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [
         react(),
-        // v-- 2. Add the VitePWA plugin after react() --v
         VitePWA({ 
           registerType: 'autoUpdate',
+          // v-- THIS IS THE NEW PART --v
+          includeAssets: ['first trans.png', 'second trans.png', 'favicon.ico'],
+          // ^-- THIS TELLS THE PWA TO SAVE THESE IMAGES FOR OFFLINE USE --^
           manifest: {
             name: 'Refy AI Referee Assistant',
             short_name: 'Refy',
@@ -22,19 +24,18 @@ export default defineConfig(({ mode }) => {
             theme_color: '#ffffff',
             icons: [
               {
-                src: 'app_icon.png', // <-- Using your new PNG filename
+                src: 'app_icon.png',
                 sizes: '192x192',
-                type: 'image/png'   // <-- Using the correct type for PNG
+                type: 'image/png'
               },
               {
-                src: 'app_icon.png', // <-- Using your new PNG filename
+                src: 'app_icon.png',
                 sizes: '512x512',
-                type: 'image/png'   // <-- Using the correct type for PNG
+                type: 'image/png'
               }
             ]
           }
         })
-        // ^-- End of PWA plugin configuration --^
       ],
       resolve: {
         alias: {
