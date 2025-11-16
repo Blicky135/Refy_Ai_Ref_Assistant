@@ -103,6 +103,12 @@ const markdownComponents = {
 };
 
 const App: React.FC = () => {
+    // State for Half 3/4 prompt
+    const [isExtraHalfModalOpen, setIsExtraHalfModalOpen] = useState(false);
+    const [extraHalfInput, setExtraHalfInput] = useState({ minutes: '', seconds: '' });
+    const [extraHalfError, setExtraHalfError] = useState('');
+    const [pendingHalf, setPendingHalf] = useState<number | null>(null); // 3 or 4
+    const [customHalfDurations, setCustomHalfDurations] = useState<{ [key: number]: number }>({});
   // Initialize with merged defaults to handle old localStorage data missing new properties
   const initSettings = () => {
     const stored = JSON.parse(localStorage.getItem('appSettings') || 'null');
@@ -123,6 +129,15 @@ const App: React.FC = () => {
   const [stoppageTimeAdded, setStoppageTimeAdded] = useState(0);
 
   const timer = useTimer(settings.halfDuration);
+  // Ref to indicate we are currently in stoppage/extra-time so calculations
+  // can be correct synchronously (avoids setState race conditions)
+  const inExtraTimeRef = useRef(false);
+  // Total elapsed play time in seconds (only increases when time actually passes)
+  const matchElapsedRef = useRef<number>(0);
+  // Match elapsed at the moment the current half started
+  const currentHalfStartMatchElapsedRef = useRef<number>(0);
+  // Match elapsed at the moment extra time started
+  const extraTimeStartMatchElapsedRef = useRef<number>(0);
   // Keep document root class in sync with selected theme so CSS variables apply
   useEffect(() => {
     if (settings.theme === 'dark') {
@@ -132,6 +147,7 @@ const App: React.FC = () => {
     }
   }, [settings.theme]);
   const prevTimeRef = useRef(timer.time);
+  const prevIsActiveRef = useRef(timer.isActive);
 
   const addEvent = useCallback((type: EventType, gameTimeInSeconds: number, team?: Team, details?: string) => {
     setMatchData(prev => ({
@@ -140,44 +156,85 @@ const App: React.FC = () => {
     }));
   }, [setMatchData]);
 
+  // Return the total actual elapsed game time in seconds.
   const calculateCurrentGameTime = useCallback(() => {
-    const baseTime = (matchData.currentHalf - 1) * settings.halfDuration;
-    if (matchData.status === 'extra-time' && stoppageTimeAdded > 0) {
-        const elapsedStoppage = stoppageTimeAdded - Math.max(0, timer.time);
-        return baseTime + settings.halfDuration + elapsedStoppage;
-    } else {
-        const elapsedTimeInHalf = settings.halfDuration - timer.time;
-        return baseTime + elapsedTimeInHalf;
-    }
-  }, [matchData.currentHalf, matchData.status, settings.halfDuration, timer.time, stoppageTimeAdded]);
+    return Math.max(0, Math.round(matchElapsedRef.current));
+  }, []);
 
   const endCurrentHalf = useCallback(() => {
     if (matchData.status === 'half-time' || matchData.status === 'full-time') return;
 
     timer.pause();
-    addEvent(EventType.HALF_END, calculateCurrentGameTime(), undefined, `End of Half ${matchData.currentHalf}`);
-    
-    const nextStatus = matchData.currentHalf >= 2 ? 'full-time' : 'half-time';
-    setMatchData(prev => ({ ...prev, status: nextStatus }));
-  }, [addEvent, calculateCurrentGameTime, matchData.currentHalf, matchData.status, setMatchData, timer]);
+    // Do NOT log HALF_END here — only log when user explicitly declines extra time.
+    // For timer-based end, ask for extra time (before proceeding to next half)
+    setIsExtraTimeModalOpen(true);
+  }, [addEvent, calculateCurrentGameTime, matchData.status, setMatchData, timer]);
+
+  // Handle what happens after extra time is declined (move to next half or end game)
+  const proceedToNextPhase = useCallback(() => {
+    // extra-time has ended (we are moving on)
+    inExtraTimeRef.current = false;
+    // clear stoppage time when moving to next phase
+    setStoppageTimeAdded(0);
+    // After Half 2, ask about Half 3
+    if (matchData.currentHalf === 2) {
+      const nextHalf = 3;
+      setPendingHalf(nextHalf);
+      setExtraHalfInput({
+        minutes: String(Math.floor(settings.extraHalfDuration / 60)),
+        seconds: String(settings.extraHalfDuration % 60)
+      });
+      setExtraHalfError('');
+      setIsExtraHalfModalOpen(true);
+    } else if (matchData.currentHalf === 3) {
+      // After Half 3, automatically go to Half 4 with the same duration (no prompt)
+      const half3Duration = customHalfDurations[3] || settings.extraHalfDuration;
+      setCustomHalfDurations(prev => ({ ...prev, 4: half3Duration }));
+      const nextStatus = 'in-progress';
+      setMatchData(prev => ({ ...prev, status: nextStatus, currentHalf: 4 }));
+      timer.reset(half3Duration);
+      // mark start of Half 4 in elapsed timeline
+      currentHalfStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
+    } else if (matchData.currentHalf === 1) {
+      // After Half 1, go straight to Half 2 (no prompt)
+      const nextStatus = 'half-time';
+      setMatchData(prev => ({ ...prev, status: nextStatus }));
+    } else {
+      // After Half 4, game is over
+      const nextStatus = 'full-time';
+      setMatchData(prev => ({ ...prev, status: nextStatus }));
+    }
+  }, [matchData.currentHalf, matchData.status, setMatchData, settings.extraHalfDuration, customHalfDurations, timer]);
+
+    const handleManualFinishHalf = useCallback(() => {
+      if (matchData.status === 'half-time' || matchData.status === 'full-time') return;
+      timer.pause();
+      // Log HALF_END when user manually finishes the half
+      addEvent(EventType.HALF_END, calculateCurrentGameTime(), undefined, `End of Half ${matchData.currentHalf}`);
+      proceedToNextPhase();
+    }, [addEvent, calculateCurrentGameTime, matchData.status, matchData.currentHalf, timer, proceedToNextPhase]);
 
 
   // Effect to handle timer reaching zero
   useEffect(() => {
+    // accumulate only actual time that passed (timer decreases). Don't count time added.
+    const delta = prevTimeRef.current - timer.time;
+    // accumulate only when the timer was active (real time passed)
+    if (delta > 0 && prevIsActiveRef.current) {
+      matchElapsedRef.current += delta;
+    }
+
     const timerJustEnded = prevTimeRef.current > 0 && timer.time <= 0;
     if (timerJustEnded) {
-        if (settings.vibration && navigator.vibrate) {
-            navigator.vibrate([200, 100, 200, 100, 200]);
-        }
-    
-        if (matchData.status === 'extra-time') {
-            endCurrentHalf();
-        } else {
-            setIsExtraTimeModalOpen(true);
-        }
+      if (settings.vibration && navigator.vibrate) {
+        navigator.vibrate([200, 100, 200, 100, 200]);
+      }
+      // Timer naturally ended — ask about extra time first
+      endCurrentHalf();
     }
     prevTimeRef.current = timer.time;
-  }, [timer.time, matchData.status, settings.vibration, endCurrentHalf]);
+    prevIsActiveRef.current = timer.isActive;
+  }, [timer.time, matchData.status, matchData.currentHalf, settings.vibration, endCurrentHalf]);
 
   useEffect(() => {
     timer.reset(settings.halfDuration);
@@ -191,6 +248,10 @@ const App: React.FC = () => {
     setMatchData(initialMatchData);
     timer.reset(settings.halfDuration);
     setStoppageTimeAdded(0);
+    inExtraTimeRef.current = false;
+    matchElapsedRef.current = 0;
+    currentHalfStartMatchElapsedRef.current = 0;
+    extraTimeStartMatchElapsedRef.current = 0;
     setActiveTab('game');
   }, [matchData, setMatchHistory, setMatchData, timer, settings.halfDuration]);
 
@@ -200,6 +261,8 @@ const App: React.FC = () => {
       kickoffTeam: team,
       status: 'in-progress'
     }));
+    // mark the start of this half in the elapsed timeline
+    currentHalfStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
     addEvent(EventType.KICKOFF, 0, team, `${team.charAt(0).toUpperCase() + team.slice(1)} has kickoff`);
   };
 
@@ -209,8 +272,9 @@ const App: React.FC = () => {
     );
 
     if (!isHalfAlreadyStarted) {
-      const eventTime = (matchData.currentHalf - 1) * settings.halfDuration;
+      const eventTime = calculateCurrentGameTime();
       addEvent(EventType.HALF_START, eventTime, undefined, `Half ${matchData.currentHalf} Started`);
+      currentHalfStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
     }
     timer.start();
   }, [matchData.eventLog, matchData.currentHalf, addEvent, timer, settings.halfDuration]);
@@ -220,6 +284,7 @@ const App: React.FC = () => {
     setMatchData(prev => ({...prev, status: 'in-progress', currentHalf: nextHalf}));
     setStoppageTimeAdded(0);
     timer.reset(settings.halfDuration);
+    currentHalfStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
   };
 
   const handleScore = (team: Team) => {
@@ -249,24 +314,30 @@ const App: React.FC = () => {
   };
 
   const handleAddExtraTime = () => {
-    // Check if inputs are valid integers
-    if (extraTimeInput.minutes && !Number.isInteger(Number(extraTimeInput.minutes))) {
-      setExtraTimeError('Invalid input. Minutes and seconds must be whole numbers.');
+    // Check if inputs are blank
+    if (extraTimeInput.minutes === '' || extraTimeInput.seconds === '') {
+      setExtraTimeError('Please enter both minutes and seconds.');
       return;
     }
-    if (extraTimeInput.seconds && !Number.isInteger(Number(extraTimeInput.seconds))) {
-      setExtraTimeError('Invalid input. Minutes and seconds must be whole numbers.');
+    // Check if inputs are valid integers
+    if (!Number.isInteger(Number(extraTimeInput.minutes))) {
+      setExtraTimeError('Invalid input. Minutes must be a whole number.');
+      return;
+    }
+    if (!Number.isInteger(Number(extraTimeInput.seconds))) {
+      setExtraTimeError('Invalid input. Seconds must be a whole number.');
       return;
     }
 
-    const mins = parseInt(extraTimeInput.minutes) || 0;
-    const secs = parseInt(extraTimeInput.seconds) || 0;
+    const mins = parseInt(extraTimeInput.minutes);
+    const secs = parseInt(extraTimeInput.seconds);
     const totalSeconds = (mins * 60) + secs;
     const MAX_SECONDS = 100 * 60; // 100 minutes
     const MAX_SECS = 59;
     
-    if (totalSeconds <= 0) {
-      setExtraTimeError('Invalid time entered');
+    // Check if time is 0:0
+    if (totalSeconds === 0) {
+      setExtraTimeError('Invalid input. Time must be greater than 0.');
       return;
     }
     if (secs > MAX_SECS) {
@@ -282,9 +353,26 @@ const App: React.FC = () => {
   };
 
   const addExtraTimeAndClose = (totalSeconds: number, mins: number, secs: number) => {
+    // snapshot when extra time starts so Reset can restore the background clock
+    extraTimeStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
+    // mark extra-time active synchronously so immediate events use correct time
+    inExtraTimeRef.current = true;
     timer.addTime(totalSeconds);
     setStoppageTimeAdded(prev => prev + totalSeconds);
-    const eventTime = matchData.currentHalf * settings.halfDuration;
+    // Log extra time event at the end of the regular half (start of stoppage time)
+    const baseBeforeCurrentHalf = (() => {
+      let base = 0;
+      if (matchData.currentHalf >= 2) base += settings.halfDuration; // Half 1
+      if (matchData.currentHalf >= 3) base += settings.halfDuration; // Half 2
+      if (matchData.currentHalf >= 4) base += customHalfDurations[3] || settings.extraHalfDuration; // Half 3
+      return base;
+    })();
+    let currentHalfDuration = settings.halfDuration;
+    if (matchData.currentHalf === 3 || matchData.currentHalf === 4) {
+      currentHalfDuration = customHalfDurations[matchData.currentHalf] || settings.extraHalfDuration;
+    }
+    // Use the actual elapsed match time (synchronous ref) for logging
+    const eventTime = Math.round(matchElapsedRef.current);
     addEvent(EventType.EXTRA_TIME, eventTime, undefined, `${mins}m ${secs}s added`);
     setMatchData(prev => ({...prev, status: 'extra-time'}));
     setIsExtraTimeModalOpen(false);
@@ -293,20 +381,117 @@ const App: React.FC = () => {
   };
 
   const addQuickExtraTime = (totalSeconds: number, mins: number, secs: number) => {
+    // snapshot when quick extra time starts
+    extraTimeStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
+    inExtraTimeRef.current = true;
     timer.addTime(totalSeconds);
     setStoppageTimeAdded(prev => prev + totalSeconds);
-    const eventTime = matchData.currentHalf * settings.halfDuration;
+    // Log extra time at end of regular half (start of stoppage time)
+    const baseBeforeCurrentHalf = (() => {
+      let base = 0;
+      if (matchData.currentHalf >= 2) base += settings.halfDuration;
+      if (matchData.currentHalf >= 3) base += settings.halfDuration;
+      if (matchData.currentHalf >= 4) base += customHalfDurations[3] || settings.extraHalfDuration;
+      return base;
+    })();
+    let currentHalfDuration = settings.halfDuration;
+    if (matchData.currentHalf === 3 || matchData.currentHalf === 4) {
+      currentHalfDuration = customHalfDurations[matchData.currentHalf] || settings.extraHalfDuration;
+    }
+    const eventTime = Math.round(matchElapsedRef.current);
     addEvent(EventType.EXTRA_TIME, eventTime, undefined, `${mins}m ${secs}s added`);
     setIsExtraTimeModalOpen(false);
     setExtraTimeInput({ minutes: '', seconds: '' });
     setExtraTimeError('');
   };
   
-  const handleDeclineExtraTime = () => {
+  // When declining extra time, proceed to next phase (next half or end game)
+  const handleDeclineExtraTime = useCallback(() => {
     setIsExtraTimeModalOpen(false);
     setExtraTimeInput({ minutes: '', seconds: '' });
     setExtraTimeError('');
-    endCurrentHalf();
+    // user declined extra time, move on
+    inExtraTimeRef.current = false;
+    setStoppageTimeAdded(0);
+    // Now the half is truly over — log HALF_END and then proceed
+    addEvent(EventType.HALF_END, calculateCurrentGameTime(), undefined, `End of Half ${matchData.currentHalf}`);
+    proceedToNextPhase();
+  }, [addEvent, calculateCurrentGameTime, matchData.currentHalf, proceedToNextPhase]);
+
+  // Validate and confirm extra half duration
+  const handleConfirmExtraHalf = () => {
+    // Check if inputs are blank
+    if (extraHalfInput.minutes === '' || extraHalfInput.seconds === '') {
+      setExtraHalfError('Please enter both minutes and seconds.');
+      return;
+    }
+    // Check if inputs are valid integers
+    if (!Number.isInteger(Number(extraHalfInput.minutes))) {
+      setExtraHalfError('Invalid input. Minutes must be a whole number.');
+      return;
+    }
+    if (!Number.isInteger(Number(extraHalfInput.seconds))) {
+      setExtraHalfError('Invalid input. Seconds must be a whole number.');
+      return;
+    }
+
+    const mins = parseInt(extraHalfInput.minutes);
+    const secs = parseInt(extraHalfInput.seconds);
+    const total = mins * 60 + secs;
+    const MAX_SECONDS = 100 * 60;
+    const MAX_SECS = 59;
+    
+    // Check if time is 0:0
+    if (total === 0) {
+      setExtraHalfError('Invalid input. Time must be greater than 0.');
+      return;
+    }
+    if (secs > MAX_SECS) {
+      setExtraHalfError('Invalid input. Maximum seconds is 59.');
+      return;
+    }
+    if (total > MAX_SECONDS) {
+      setExtraHalfError('Invalid input. Maximum half duration is 100 minutes.');
+      return;
+    }
+    // Store custom duration for this half so reset uses it
+    setCustomHalfDurations(prev => {
+      const updated = { ...prev, [pendingHalf!]: total };
+      // If confirming Half 3, automatically set Half 4 to the same duration
+      if (pendingHalf === 3) {
+        updated[4] = total;
+      }
+      return updated;
+    });
+    // Prepare next half, do not start timer
+    setMatchData(prev => ({
+      ...prev,
+      currentHalf: pendingHalf!,
+      status: 'in-progress',
+    }));
+    // mark the start of this extra half in the elapsed timeline
+    currentHalfStartMatchElapsedRef.current = Math.round(matchElapsedRef.current);
+    timer.reset(total);
+    setIsExtraHalfModalOpen(false);
+    setExtraHalfInput({ minutes: '', seconds: '' });
+    setExtraHalfError('');
+    // If this was Half 3, automatically prepare Half 4 with the same duration
+    if (pendingHalf === 3) {
+      setPendingHalf(null);
+    } else {
+      setPendingHalf(null);
+    }
+  };
+
+  // End game from extra half modal (user clicks "End Game" button)
+  const handleEndGameFromExtraHalf = () => {
+    setIsExtraHalfModalOpen(false);
+    setExtraHalfInput({ minutes: '', seconds: '' });
+    setExtraHalfError('');
+    setPendingHalf(null);
+    // End the game
+    inExtraTimeRef.current = false;
+    setMatchData(prev => ({ ...prev, status: 'full-time' }));
   };
   
   return (
@@ -330,7 +515,31 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-4 pb-28" style={{ backgroundColor: 'var(--content-bg)' }}>
-          {activeTab === 'game' && <GameTab matchData={matchData} timer={timer} settings={settings} onScore={handleScore} onRemoveGoal={handleRemoveGoal} onCard={(team, card) => setCardModalInfo({team, card})} onPlay={handlePlay} onFinishHalf={endCurrentHalf} onStartNextHalf={handleStartNextHalf} onSelectKickoff={handleKickoffSelect} onGoToCoinFlip={() => setActiveTab('coin-flip')} />}
+          {activeTab === 'game' && (
+            <GameTab 
+              matchData={matchData} 
+              timer={timer} 
+              settings={settings} 
+              customHalfDurations={customHalfDurations} 
+              onScore={handleScore} 
+              onRemoveGoal={handleRemoveGoal} 
+              onCard={(team, card) => setCardModalInfo({team, card})} 
+              onPlay={handlePlay} 
+              onFinishHalf={handleManualFinishHalf} 
+              onStartNextHalf={handleStartNextHalf} 
+              onResetTimer={(duration: number) => {
+                // Reset visible timer and restore background clock snapshot
+                timer.reset(duration);
+                if (inExtraTimeRef.current) {
+                  matchElapsedRef.current = extraTimeStartMatchElapsedRef.current;
+                } else {
+                  matchElapsedRef.current = currentHalfStartMatchElapsedRef.current;
+                }
+              }}
+              onSelectKickoff={handleKickoffSelect} 
+              onGoToCoinFlip={() => setActiveTab('coin-flip')} 
+            />
+          )}
           {activeTab === 'report' && <ReportTab matchData={matchData} />}
           {activeTab === 'coin-flip' && <CoinFlipTab />}
           {activeTab === 'rules' && <RulesTab />}
@@ -355,39 +564,53 @@ const App: React.FC = () => {
         />
         <HistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} history={matchHistory} />
         <Modal isOpen={isExtraTimeModalOpen} onClose={() => setIsExtraTimeModalOpen(false)} title="Add Extra Time?">
-            <div className="space-y-4">
-                <div className="flex flex-col gap-3">
-                    <p className="text-sm font-semibold text-gray-700">Quick Options</p>
-                    <div className="grid grid-cols-3 gap-2">
-                        {settings.quickExtraTime.map((time, idx) => {
-                            const mins = Math.floor(time / 60);
-                            const secs = time % 60;
-                            return (
-                                <button
-                                    key={idx}
-                                    onClick={() => {
-                                        addQuickExtraTime(time, mins, secs);
-                                    }}
-                                    className="bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-bold py-2 px-3 rounded-lg transition text-sm"
-                                >
-                                    +{mins}m {secs}s
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
-                <div className="border-t pt-3">
-                    <p className="text-sm font-semibold text-gray-700 mb-2">Custom Time</p>
-                    <div className="flex items-center space-x-2">
-                        <input type="number" min={0} max={100} placeholder="Mins" value={extraTimeInput.minutes} onChange={(e) => { setExtraTimeInput(p => ({...p, minutes: e.target.value})); setExtraTimeError(''); }} className="w-full p-2 border rounded-md text-center" />
-                        <span className="font-bold text-lg">:</span>
-                        <input type="number" min={0} max={59} placeholder="Secs" value={extraTimeInput.seconds} onChange={(e) => { setExtraTimeInput(p => ({...p, seconds: e.target.value})); setExtraTimeError(''); }} className="w-full p-2 border rounded-md text-center" />
-                    </div>
-                </div>
-                {extraTimeError && <p className="text-sm text-red-500 error-text">{extraTimeError}</p>}
-                <button onClick={handleAddExtraTime} disabled={extraTimeInput.minutes === '' || extraTimeInput.seconds === '' || extraTimeError !== ''} className="w-full bg-yellow-400 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition disabled:bg-gray-300 disabled:cursor-not-allowed">Add Time</button>
-                <button onClick={handleDeclineExtraTime} className="w-full bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition">No</button>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-semibold text-gray-700">Quick Options</p>
+              <div className="grid grid-cols-3 gap-2">
+                {settings.quickExtraTime.map((time, idx) => {
+                  const mins = Math.floor(time / 60);
+                  const secs = time % 60;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        addQuickExtraTime(time, mins, secs);
+                      }}
+                      className="bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-bold py-2 px-3 rounded-lg transition text-sm"
+                    >
+                      +{mins}m {secs}s
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+            <div className="border-t pt-3">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Custom Time</p>
+              <div className="flex items-center space-x-2">
+                <input type="number" min={0} max={100} placeholder="Mins" value={extraTimeInput.minutes} onChange={(e) => { setExtraTimeInput(p => ({...p, minutes: e.target.value})); setExtraTimeError(''); }} className="w-full p-2 border rounded-md text-center" />
+                <span className="font-bold text-lg">:</span>
+                <input type="number" min={0} max={59} placeholder="Secs" value={extraTimeInput.seconds} onChange={(e) => { setExtraTimeInput(p => ({...p, seconds: e.target.value})); setExtraTimeError(''); }} className="w-full p-2 border rounded-md text-center" />
+              </div>
+            </div>
+            {extraTimeError && <p className="text-sm text-red-500 error-text">{extraTimeError}</p>}
+            <button onClick={handleAddExtraTime} disabled={extraTimeInput.minutes === '' || extraTimeInput.seconds === '' || extraTimeError !== ''} className="w-full bg-yellow-400 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition disabled:bg-gray-300 disabled:cursor-not-allowed">Add Time</button>
+            <button onClick={handleDeclineExtraTime} className="w-full bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition">No</button>
+          </div>
+        </Modal>
+
+        {/* Extra Half Modal for 3rd/4th half */}
+        <Modal isOpen={isExtraHalfModalOpen} onClose={() => setIsExtraHalfModalOpen(false)} title={`Enter time for Half ${pendingHalf}`}> 
+          <div className="space-y-4">
+          <div className="flex items-center space-x-2">
+            <input type="number" min={0} max={100} placeholder="Mins" value={extraHalfInput.minutes} onChange={(e) => { setExtraHalfInput(p => ({...p, minutes: e.target.value})); setExtraHalfError(''); }} className="w-full p-2 border rounded-md text-center" />
+            <span className="font-bold text-lg">:</span>
+            <input type="number" min={0} max={59} placeholder="Secs" value={extraHalfInput.seconds} onChange={(e) => { setExtraHalfInput(p => ({...p, seconds: e.target.value})); setExtraHalfError(''); }} className="w-full p-2 border rounded-md text-center" />
+          </div>
+          {extraHalfError && <p className="text-sm text-red-500 error-text">{extraHalfError}</p>}
+          <button onClick={handleConfirmExtraHalf} disabled={extraHalfInput.minutes === '' || extraHalfInput.seconds === '' || extraHalfError !== ''} className="w-full bg-yellow-400 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-yellow-500 transition disabled:bg-gray-300 disabled:cursor-not-allowed">Ok</button>
+          <button onClick={handleEndGameFromExtraHalf} className="w-full bg-gray-200 text-gray-800 font-bold py-2 px-4 rounded-lg hover:bg-gray-300 transition">End Game</button>
+          </div>
         </Modal>
         {cardModalInfo && (
             <CardInputModal 
@@ -426,16 +649,18 @@ const GameTab: React.FC<{
     matchData: MatchData, 
     timer: any,
     settings: Settings,
+    customHalfDurations: { [key: number]: number },
     onScore: (t: Team) => void, 
     onRemoveGoal: (t: Team) => void,
     onCard: (t: Team, c: 'yellow'|'red') => void, 
     onPlay: ()=>void, 
     onFinishHalf: ()=>void,
     onStartNextHalf: ()=>void,
-    onSelectKickoff: (t: Team) => void,
-    onGoToCoinFlip: () => void,
-}> = (props) => {
-  const { matchData, timer, settings, onScore, onRemoveGoal, onCard, onPlay, onFinishHalf, onStartNextHalf, onSelectKickoff, onGoToCoinFlip } = props;
+      onResetTimer: (duration: number) => void,
+      onSelectKickoff: (t: Team) => void,
+      onGoToCoinFlip: () => void,
+  }> = (props) => {
+    const { matchData, timer, settings, customHalfDurations, onScore, onRemoveGoal, onCard, onPlay, onFinishHalf, onStartNextHalf, onResetTimer, onSelectKickoff, onGoToCoinFlip } = props;
 
   if (matchData.status === 'pre-match') {
     return <KickoffScreen onSelectKickoff={onSelectKickoff} onGoToCoinFlip={onGoToCoinFlip} />;
@@ -456,7 +681,13 @@ const GameTab: React.FC<{
           ) : (
             <button onClick={onPlay} disabled={!canPlay} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition disabled:bg-gray-300 timer-btn" aria-label="Start"><span className="text-sm font-semibold">Start</span></button>
           )}
-          <button onClick={() => timer.reset(settings.halfDuration)} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition reset-btn timer-btn" aria-label="Reset"><span className="text-sm font-semibold">Reset</span></button>
+          <button onClick={() => {
+            let resetDuration = settings.halfDuration;
+            if (matchData.currentHalf === 3 || matchData.currentHalf === 4) {
+              resetDuration = customHalfDurations[matchData.currentHalf] || settings.extraHalfDuration;
+            }
+            onResetTimer(resetDuration);
+          }} className="p-3 bg-yellow-400 text-gray-800 rounded-full hover:bg-yellow-500 transition reset-btn timer-btn" aria-label="Reset"><span className="text-sm font-semibold">Reset</span></button>
         </div>
         <div className="mt-4">
             {canFinishHalf && (
@@ -679,6 +910,7 @@ const SettingsModal: React.FC<{
 }> = ({ isOpen, onClose, settings, setSettings, onStartNewGame, onClearHistory }) => {
   const [showConfirm, setShowConfirm] = useState<'new' | 'history' | null>(null);
   const [showDurationPrompt, setShowDurationPrompt] = useState(false);
+  const [showExtraHalfDurationPrompt, setShowExtraHalfDurationPrompt] = useState(false);
   const [showQuickExtraTimePrompt, setShowQuickExtraTimePrompt] = useState(false);
 
   const handleNewGameConfirm = () => {
@@ -855,6 +1087,22 @@ const SettingsModal: React.FC<{
             </div>
           </div>
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Extra Half Duration (3rd/4th Half)</label>
+            <div className="mt-1 flex items-center" style={{ gap: '0.75rem' }}>
+            <div className="text-lg font-semibold text-gray-700">{Math.floor(settings.extraHalfDuration / 60)}m {settings.extraHalfDuration % 60}s</div>
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                type="button"
+                onClick={() => setShowExtraHalfDurationPrompt(true)}
+                className={`inline-flex items-center px-3 py-1.5 rounded-md border bg-yellow-400 hover:bg-yellow-500 transition ${settings.theme === 'dark' ? 'text-white border-yellow-500' : 'text-gray-900 border-yellow-600'}`}
+                style={{ transform: 'translateX(6px)' }}
+              >
+                Edit
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-gray-700">Vibration on Timer End</span>
           <button
@@ -900,6 +1148,14 @@ const SettingsModal: React.FC<{
             initialSeconds={settings.halfDuration}
             onCancel={() => setShowDurationPrompt(false)}
             onConfirm={(seconds) => { setSettings(s => ({...s, halfDuration: seconds})); setShowDurationPrompt(false); }}
+          />
+      </Modal>
+      {/* Extra Half Duration Prompt Modal */}
+      <Modal isOpen={showExtraHalfDurationPrompt} onClose={() => setShowExtraHalfDurationPrompt(false)} title="Set Extra Half Duration (3rd/4th Half)">
+          <DurationPrompt
+            initialSeconds={settings.extraHalfDuration}
+            onCancel={() => setShowExtraHalfDurationPrompt(false)}
+            onConfirm={(seconds) => { setSettings(s => ({...s, extraHalfDuration: seconds})); setShowExtraHalfDurationPrompt(false); }}
           />
       </Modal>
 

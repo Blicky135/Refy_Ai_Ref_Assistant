@@ -45,6 +45,7 @@ export interface MatchData {
 
 export interface Settings {
   halfDuration: number; // in seconds
+  extraHalfDuration: number; // in seconds (for Half 3 and 4)
   vibration: boolean;
   theme?: 'light' | 'dark';
   quickExtraTime: number[]; // array of 3 quick extra time options in seconds
